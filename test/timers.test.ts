@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { dueKeys, earliest, type Deadlines } from '../src/timers'
 
 describe('deadlines', () => {
-  const d: Deadlines = { pilot: 1_000, offer: null, abandon: 5_000, expiry: null, webhook: null }
+  const d: Deadlines = { pilot: 1_000, offer: null, abandon: 5_000, expiry: null, webhook: null, game: null }
   it('earliest picks the soonest non-null deadline', () => {
     expect(earliest(d)).toBe(1_000)
-    expect(earliest({ pilot: null, offer: null, abandon: null, expiry: null, webhook: null })).toBeNull()
+    expect(earliest({ pilot: null, offer: null, abandon: null, expiry: null, webhook: null, game: null })).toBeNull()
   })
   it('dueKeys lists every deadline at or before now, soonest first', () => {
     expect(dueKeys(d, 999)).toEqual([])

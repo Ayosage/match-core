@@ -30,9 +30,14 @@ export interface GameAdapter<S, I, V, E> {
   slug: string
   players: { min: number; max: number }
   intentSchema: ZodType<I>
-  create(opts: { playerCount: number; seed: number; [k: string]: unknown }, rng: Rng): S
-  /** The engine's reducer; `player` is the seat the object derived from the socket. */
-  apply(state: S, intent: I & { player: number }, rng: Rng): S | RuleError
+  /** `now` is the object's clock (ms since epoch) at creation. */
+  create(opts: { playerCount: number; seed: number; now: number; [k: string]: unknown }, rng: Rng): S
+  /** The engine's reducer; `player` is the seat the object derived from the socket; `now` is the intent's arrival time. */
+  apply(state: S, intent: I & { player: number }, rng: Rng, now: number): S | RuleError
+  /** An absolute time (ms) the game wants to be woken at, or null. Read after every state change. */
+  deadline?(state: S): number | null
+  /** The state after that time passes; runs through the same broadcast path as an intent. */
+  expire?(state: S, now: number, rng: Rng): { state: S; events: E[] }
   view(state: S, seat: number): V
   events(before: S, intent: I & { player: number }, after: S): E[]
   redactEvent(event: E, seat: number): E

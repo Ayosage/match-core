@@ -1,9 +1,9 @@
-export const TIMER_KEYS = ['pilot', 'offer', 'abandon', 'expiry', 'webhook'] as const
+export const TIMER_KEYS = ['pilot', 'offer', 'abandon', 'expiry', 'webhook', 'game'] as const
 export type TimerKey = (typeof TIMER_KEYS)[number]
 /** Epoch ms per timer, null when unarmed. Persisted; the single DO alarm is set to the earliest. */
 export type Deadlines = Record<TimerKey, number | null>
 
-export const NO_DEADLINES: Deadlines = { pilot: null, offer: null, abandon: null, expiry: null, webhook: null }
+export const NO_DEADLINES: Deadlines = { pilot: null, offer: null, abandon: null, expiry: null, webhook: null, game: null }
 
 export function earliest(d: Deadlines): number | null {
   let best: number | null = null

@@ -390,8 +390,9 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       // Same as the Colyseus room: an early start plays with the seats that exist, not the target.
       const playerCount = this.seats().length
       const knobs = this.knobs()
-      const state = adapter.create({ ...knobs, playerCount, seed: meta.seed }, intentRng(meta.seed, 0))
+      const state = adapter.create({ ...knobs, playerCount, seed: meta.seed, now: Date.now() }, intentRng(meta.seed, 0))
       this.saveState(state, 0)
+      this.syncGameDeadline(state)
       this.setMeta({ phase: 'playing' })
       this.setDeadline('expiry', null)
       this.broadcastLobby()
@@ -426,7 +427,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       const meta = this.getMeta()!
       const state = this.loadState()
       if (!state || meta.phase !== 'playing') return
-      const result = adapter.apply(state, intent, intentRng(meta.seed, meta.seq + 1))
+      const result = adapter.apply(state, intent, intentRng(meta.seed, meta.seq + 1), Date.now())
       if (isRuleError(result)) {
         if (errorTo !== undefined)
           return this.sendToSeat(errorTo, { t: 'error', code: result.code, message: result.message })
@@ -439,10 +440,12 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       }
       const seq = meta.seq + 1
       this.saveState(result, seq)
+      this.syncGameDeadline(result)
       const events = adapter.events(state, intent, result)
       this.broadcastViews(events)
       if (adapter.isEnded(result)) {
         this.setMeta({ phase: 'ended' })
+        this.setDeadline('game', null)
         for (const ws of this.ctx.getWebSockets()) this.send(ws, { t: 'ended', reason: 'win', winner: adapter.winner(result) })
         this.onEnded(result)
         return
@@ -545,6 +548,35 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       else this.scheduleDriving()
     }
 
+    /** The game's own deadline, if the adapter has one, as the sixth stored timer. */
+    syncGameDeadline(state: S): void {
+      if (!adapter.deadline) return
+      const at = adapter.isEnded(state) ? null : adapter.deadline(state)
+      this.setDeadline('game', at)
+      this.armAlarm()
+    }
+
+    /** The game deadline passed: let the adapter move the state on, through the usual broadcast path. */
+    fireGame(): void {
+      this.setDeadline('game', null)
+      const meta = this.getMeta()
+      const state = this.loadState()
+      if (!meta || !state || meta.phase !== 'playing' || !adapter.expire) return
+      const { state: next, events } = adapter.expire(state, Date.now(), intentRng(meta.seed, meta.seq + 1))
+      const seq = meta.seq + 1
+      this.saveState(next, seq)
+      this.broadcastViews(events)
+      if (adapter.isEnded(next)) {
+        this.setMeta({ phase: 'ended' })
+        for (const ws of this.ctx.getWebSockets()) this.send(ws, { t: 'ended', reason: 'win', winner: adapter.winner(next) })
+        this.onEnded(next)
+        return
+      }
+      this.syncGameDeadline(next)
+      this.scheduleDriving()
+      this.syncOfferWindow(next)
+    }
+
     /** A bot's own offer stays open for offerWindowMs, or until every other seat answered. */
     syncOfferWindow(state: S): void {
       const { open, everyoneAnswered } = adapter.offerWindow(state)
@@ -590,6 +622,9 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
             break
           case 'webhook':
             await this.fireWebhook()
+            break
+          case 'game':
+            this.fireGame()
             break
         }
       }
@@ -682,6 +717,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       this.setDeadline('pilot', null)
       this.setDeadline('offer', null)
       this.setDeadline('abandon', null)
+      this.setDeadline('game', null)
       this.setMeta({ resultStatus: 'completed', resultJson: JSON.stringify(adapter.result(state)) })
       this.setDeadline('webhook', Date.now())
       // ended rooms delete their storage a day later
@@ -697,6 +733,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       this.setMeta({ phase: 'ended', resultStatus: 'abandoned', resultJson: JSON.stringify(adapter.result(state)) })
       this.setDeadline('pilot', null)
       this.setDeadline('offer', null)
+      this.setDeadline('game', null)
       for (const ws of this.ctx.getWebSockets()) this.send(ws, { t: 'ended', reason: 'abandoned', winner: null })
       this.setDeadline('webhook', Date.now())
       this.setDeadline('expiry', Date.now() + 24 * 60 * 60_000)
