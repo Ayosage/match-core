@@ -11,11 +11,11 @@ Used by Meridian (Catan) and Wordy Champions.
 ## Install
 
 ```json
-"@ayosage/match-core": "github:Ayosage/match-core#v0.1.2"
+"@ayosage/match-core": "github:Ayosage/match-core#v0.1.3"
 ```
 
-pnpm builds it on install (`prepare` runs tsup); add `@ayosage/match-core` to
-the consumer's `pnpm.onlyBuiltDependencies`. Peer: `@cloudflare/workers-types`.
+`dist/` is committed, so installing needs no build step. After changing `src/`,
+run `pnpm build`, commit `dist/` with it, and tag. Peer: `@cloudflare/workers-types`.
 
 ## Entry points
 
