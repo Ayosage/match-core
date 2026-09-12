@@ -11,7 +11,7 @@ Used by Meridian (Catan) and Wordy Champions.
 ## Install
 
 ```json
-"@ayosage/match-core": "github:Ayosage/match-core#v0.1.1"
+"@ayosage/match-core": "github:Ayosage/match-core#v0.1.2"
 ```
 
 pnpm builds it on install (`prepare` runs tsup); add `@ayosage/match-core` to

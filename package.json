@@ -1,6 +1,6 @@
 {
   "name": "@ayosage/match-core",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "One Cloudflare Durable Object per match: seats, hibernating WebSockets, an intent loop over SQLite, one alarm for every deadline, and a launcher contract. Bring a GameAdapter.",
   "license": "MIT",
   "type": "module",
