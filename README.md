@@ -11,7 +11,7 @@ Used by Meridian (Catan) and Wordy Champions.
 ## Install
 
 ```json
-"@ayosage/match-core": "github:Ayosage/match-core#v0.1.0"
+"@ayosage/match-core": "github:Ayosage/match-core#v0.1.1"
 ```
 
 pnpm builds it on install (`prepare` runs tsup); add `@ayosage/match-core` to
@@ -20,6 +20,7 @@ the consumer's `pnpm.onlyBuiltDependencies`. Peer: `@cloudflare/workers-types`.
 ## Entry points
 
 - `@ayosage/match-core`: `createMatchObject(adapter)`, the adapter contract, the transport envelope.
+- `@ayosage/match-core/envelope`: the transport schemas alone, safe to import outside the Workers runtime (clients, node tests).
 - `@ayosage/match-core/worker`: `matchFetch(request, env)`: healthz, `POST /matches` (bearer), `POST /matches/open`, `GET /matches/:code`, the socket route, CORS pinned to `CLIENT_ORIGIN`.
 - `@ayosage/match-core/client`: `MatchSocket`, `wsUrl`, `httpOrigin` for browsers.
 

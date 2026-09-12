@@ -1,14 +1,29 @@
 {
   "name": "@ayosage/match-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One Cloudflare Durable Object per match: seats, hibernating WebSockets, an intent loop over SQLite, one alarm for every deadline, and a launcher contract. Bring a GameAdapter.",
   "license": "MIT",
   "type": "module",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./worker": { "types": "./dist/worker/index.d.ts", "import": "./dist/worker/index.js" },
-    "./client": { "types": "./dist/client/index.d.ts", "import": "./dist/client/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/index.d.ts",
+      "import": "./dist/worker/index.js"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js"
+    },
+    "./envelope": {
+      "types": "./dist/envelope.d.ts",
+      "import": "./dist/envelope.js"
+    }
   },
   "scripts": {
     "build": "tsup",
@@ -16,8 +31,12 @@
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
-  "dependencies": { "zod": "^3.23.0" },
-  "peerDependencies": { "@cloudflare/workers-types": ">=4.20250900.0" },
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "peerDependencies": {
+    "@cloudflare/workers-types": ">=4.20250900.0"
+  },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@cloudflare/workers-types": "^5.20260911.1",
@@ -27,7 +46,14 @@
     "vitest": "^4.1.0",
     "wrangler": "4.124.0"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "packageManager": "pnpm@10.12.1",
-  "pnpm": { "onlyBuiltDependencies": ["esbuild", "workerd"] }
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  }
 }
