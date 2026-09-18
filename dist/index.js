@@ -55,14 +55,29 @@ CREATE TABLE IF NOT EXISTS memory (seat INTEGER PRIMARY KEY, json TEXT NOT NULL)
 `;
 function createMatchObject(adapter) {
   return class MatchObject extends DurableObject {
-    constructor(ctx, env) {
-      super(ctx, env);
-      ctx.blockConcurrencyWhile(async () => {
-        this.ctx.storage.sql.exec(SCHEMA);
-      });
+    /**
+     * Whether this object has ever been written to, memoised for the instance.
+     * A code is named before anyone knows the room exists, so a lookup for a
+     * code nobody created reaches a constructor: creating the tables here
+     * would let a caller walking the code space mint an object per guess.
+     * `null` means not yet asked.
+     */
+    schema = null;
+    hasSchema() {
+      if (this.schema === null) {
+        this.schema = this.ctx.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'").toArray().length > 0;
+      }
+      return this.schema;
+    }
+    /** Before any write. Creating the tables is the moment the object starts costing storage. */
+    ensureSchema() {
+      if (this.hasSchema()) return;
+      this.ctx.storage.sql.exec(SCHEMA);
+      this.schema = true;
     }
     // ---- storage helpers ---------------------------------------------------
     getMeta() {
+      if (!this.hasSchema()) return null;
       const rows = this.ctx.storage.sql.exec("SELECT k, v FROM meta").toArray();
       if (rows.length === 0) return null;
       const m = {};
@@ -83,6 +98,7 @@ function createMatchObject(adapter) {
     }
     /** Upsert meta keys. Extra keys beyond `Meta` (seatNames, result, webhook bookkeeping) are allowed. */
     setMeta(patch) {
+      this.ensureSchema();
       for (const [k, v] of Object.entries(patch)) {
         if (v === void 0) continue;
         this.ctx.storage.sql.exec(
@@ -93,19 +109,23 @@ function createMatchObject(adapter) {
       }
     }
     metaValue(k) {
+      if (!this.hasSchema()) return null;
       const row = this.ctx.storage.sql.exec("SELECT v FROM meta WHERE k = ?", k).toArray()[0];
       return row ? row.v : null;
     }
     seats() {
+      if (!this.hasSchema()) return [];
       return this.ctx.storage.sql.exec("SELECT seat, kind, token, seatToken, displayName, connected FROM seats ORDER BY seat").toArray();
     }
     deadlines() {
       const d = { ...NO_DEADLINES };
+      if (!this.hasSchema()) return d;
       for (const r of this.ctx.storage.sql.exec("SELECT k, at FROM timers").toArray())
         d[r.k] = r.at;
       return d;
     }
     setDeadline(k, at) {
+      this.ensureSchema();
       this.ctx.storage.sql.exec("INSERT INTO timers (k, at) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET at = excluded.at", k, at);
     }
     /** One alarm per object: always the earliest stored deadline. */
@@ -290,10 +310,12 @@ function createMatchObject(adapter) {
     }
     // ---- state -------------------------------------------------------------
     loadState() {
+      if (!this.hasSchema()) return null;
       const row = this.ctx.storage.sql.exec("SELECT json FROM state WHERE id = 1").toArray()[0];
       return row ? JSON.parse(row.json) : null;
     }
     saveState(state, seq) {
+      this.ensureSchema();
       this.ctx.storage.sql.exec(
         "INSERT INTO state (id, json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET json = excluded.json",
         JSON.stringify(state)
@@ -396,10 +418,12 @@ function createMatchObject(adapter) {
       return this.seats().filter((s) => s.kind === "human" && s.connected === 1).length;
     }
     memoryFor(seat) {
+      if (!this.hasSchema()) return void 0;
       const row = this.ctx.storage.sql.exec("SELECT json FROM memory WHERE seat = ?", seat).toArray()[0];
       return row ? JSON.parse(row.json) : void 0;
     }
     setMemory(seat, memory) {
+      this.ensureSchema();
       this.ctx.storage.sql.exec(
         "INSERT INTO memory (seat, json) VALUES (?, ?) ON CONFLICT(seat) DO UPDATE SET json = excluded.json",
         seat,
@@ -650,7 +674,7 @@ function createMatchObject(adapter) {
       }
       await this.ctx.storage.deleteAll();
       await this.ctx.storage.deleteAlarm();
-      this.ctx.storage.sql.exec(SCHEMA);
+      this.schema = false;
     }
     async fireWebhook() {
       const meta = this.getMeta();

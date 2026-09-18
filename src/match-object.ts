@@ -86,16 +86,36 @@ CREATE TABLE IF NOT EXISTS memory (seat INTEGER PRIMARY KEY, json TEXT NOT NULL)
 
 export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>): MatchObjectClass<S> {
   return class MatchObject extends DurableObject<MatchEnv> implements MatchObjectApi<S> {
-    constructor(ctx: DurableObjectState, env: MatchEnv) {
-      super(ctx, env)
-      ctx.blockConcurrencyWhile(async () => {
-        this.ctx.storage.sql.exec(SCHEMA)
-      })
+    /**
+     * Whether this object has ever been written to, memoised for the instance.
+     * A code is named before anyone knows the room exists, so a lookup for a
+     * code nobody created reaches a constructor: creating the tables here
+     * would let a caller walking the code space mint an object per guess.
+     * `null` means not yet asked.
+     */
+    private schema: boolean | null = null
+
+    private hasSchema(): boolean {
+      if (this.schema === null) {
+        this.schema =
+          this.ctx.storage.sql
+            .exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+            .toArray().length > 0
+      }
+      return this.schema
+    }
+
+    /** Before any write. Creating the tables is the moment the object starts costing storage. */
+    private ensureSchema(): void {
+      if (this.hasSchema()) return
+      this.ctx.storage.sql.exec(SCHEMA)
+      this.schema = true
     }
 
     // ---- storage helpers ---------------------------------------------------
 
     getMeta(): Meta | null {
+      if (!this.hasSchema()) return null
       const rows = this.ctx.storage.sql.exec<{ k: string; v: string }>('SELECT k, v FROM meta').toArray()
       if (rows.length === 0) return null
       const m: Record<string, string> = {}
@@ -117,6 +137,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
 
     /** Upsert meta keys. Extra keys beyond `Meta` (seatNames, result, webhook bookkeeping) are allowed. */
     setMeta(patch: Record<string, string | number | null | undefined>): void {
+      this.ensureSchema()
       for (const [k, v] of Object.entries(patch)) {
         if (v === undefined) continue
         this.ctx.storage.sql.exec(
@@ -128,11 +149,13 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
     }
 
     metaValue(k: string): string | null {
+      if (!this.hasSchema()) return null
       const row = this.ctx.storage.sql.exec<{ v: string }>('SELECT v FROM meta WHERE k = ?', k).toArray()[0]
       return row ? row.v : null
     }
 
     seats(): SeatRow[] {
+      if (!this.hasSchema()) return []
       return this.ctx.storage.sql
         .exec<SeatRow>('SELECT seat, kind, token, seatToken, displayName, connected FROM seats ORDER BY seat')
         .toArray()
@@ -140,6 +163,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
 
     deadlines(): Deadlines {
       const d: Deadlines = { ...NO_DEADLINES }
+      if (!this.hasSchema()) return d
       for (const r of this.ctx.storage.sql
         .exec<{ k: keyof Deadlines; at: number | null }>('SELECT k, at FROM timers')
         .toArray())
@@ -148,6 +172,7 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
     }
 
     setDeadline(k: keyof Deadlines, at: number | null): void {
+      this.ensureSchema()
       this.ctx.storage.sql.exec('INSERT INTO timers (k, at) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET at = excluded.at', k, at)
     }
 
@@ -357,11 +382,13 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
     // ---- state -------------------------------------------------------------
 
     loadState(): S | null {
+      if (!this.hasSchema()) return null
       const row = this.ctx.storage.sql.exec<{ json: string }>('SELECT json FROM state WHERE id = 1').toArray()[0]
       return row ? (JSON.parse(row.json) as S) : null
     }
 
     saveState(state: S, seq: number): void {
+      this.ensureSchema()
       // Two writes, no await between them: coalesced into one transaction.
       this.ctx.storage.sql.exec(
         'INSERT INTO state (id, json) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET json = excluded.json',
@@ -476,11 +503,13 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
     }
 
     memoryFor(seat: number): unknown {
+      if (!this.hasSchema()) return undefined
       const row = this.ctx.storage.sql.exec<{ json: string }>('SELECT json FROM memory WHERE seat = ?', seat).toArray()[0]
       return row ? JSON.parse(row.json) : undefined
     }
 
     setMemory(seat: number, memory: unknown): void {
+      this.ensureSchema()
       this.ctx.storage.sql.exec(
         'INSERT INTO memory (seat, json) VALUES (?, ?) ON CONFLICT(seat) DO UPDATE SET json = excluded.json',
         seat,
@@ -754,8 +783,10 @@ export function createMatchObject<S, I, V, E>(adapter: GameAdapter<S, I, V, E>):
       }
       await this.ctx.storage.deleteAll()
       await this.ctx.storage.deleteAlarm()
-      // deleteAll drops the tables too; keep this instance answerable (lobby() -> null) until it is evicted.
-      this.ctx.storage.sql.exec(SCHEMA)
+      // deleteAll drops the tables too. Recording that, rather than rebuilding them,
+      // keeps this instance answerable (lobby() -> null) and leaves an expired match
+      // costing nothing once it is evicted.
+      this.schema = false
     }
 
     async fireWebhook(): Promise<void> {
